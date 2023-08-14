@@ -1,6 +1,6 @@
 library(plumber)
 utilities <- new.env()
-sys.source("./utilities/utilities.R", envir = utilities, toplevel.env = utilities)
+sys.source("./utilities/utilities_v2.R", envir = utilities, toplevel.env = utilities)
 
 # Load the serialized model from S3
 download_and_load_model <- function(url) {
@@ -59,18 +59,22 @@ function(file_list, predictor=NULL) {
 function(file_list, predictor=NULL) {
   read_files<- list()
   for (i in 1:length(file_list)){
-    cat(file_list[[i]])
-    read_files[[names(file_list)[i]]]<- read.table(text = file_list[[i]], sep =",", header = TRUE, stringsAsFactors = FALSE, row.names = 1)
+    # cat(file_list[[i]])
+    read_files[[names(file_list)[i]]]<- read.table(text = file_list[[i]], sep =",", header = TRUE, stringsAsFactors = FALSE)
+    colnames(read_files[[names(file_list)[i]]])[1]<-"Sample"
+    cat("COLNAMES:\n")
+    cat(colnames(read_files[[names(file_list)[i]]]))
+    cat("\n")
   }
-  
+
   predictor_vector<- NULL
   if (!is.null(predictor) && length(read_files)){
-    predictor_vector<- read_files[[names(file_list)[1]]][predictor]
+    predictor_vector<- read_files[[names(file_list)[1]]][,c("Sample",predictor)]
   }
   
   if(!is.null(predictor)){
     for(i in 1:length(read_files)){
-      read_files[[names(file_list)[i]]]<-read_files[[names(file_list)[i]]][,!names(read_files[[names(file_list)[i]]]) %in% c(predictor)]
+      read_files[[names(read_files)[i]]]<-read_files[[names(read_files)[i]]][,!names(read_files[[names(read_files)[i]]]) %in% c(predictor)]
     }
   }
   
