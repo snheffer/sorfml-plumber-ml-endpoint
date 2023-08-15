@@ -66,15 +66,16 @@ function(file_list, predictor=NULL) {
     cat(colnames(read_files[[names(file_list)[i]]]))
     cat("\n")
   }
-
+  model_metadata<- list()
+  model_metadata$xlabels<-list()
   predictor_vector<- NULL
   if (!is.null(predictor) && length(read_files)){
     predictor_vector<- read_files[[names(file_list)[1]]][,c("Sample",predictor)]
   }
-  
-  if(!is.null(predictor)){
+  if(length(read_files)){
     for(i in 1:length(read_files)){
       read_files[[names(read_files)[i]]]<-read_files[[names(read_files)[i]]][,!names(read_files[[names(read_files)[i]]]) %in% c(predictor)]
+      model_metadata$xlabels[[i]]<-names(read_files[[names(read_files)[i]]])
     }
   }
   
@@ -82,9 +83,12 @@ function(file_list, predictor=NULL) {
   for(file in read_files){
     print(file)
   }
-  # print(read_files[[names(read_files)[1]]])
   cat("\n Predictor_Vector:\n")
   print(predictor_vector)
+  cat("\n File X Labels\n")
+  print(model_metadata$xlabels)
+  cat("End file X labels\n")
+  cat("\n")
   concatenated_files<-utilities$drop_NAs_join(read_files, predictor_vector)
 }
 
