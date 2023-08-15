@@ -69,12 +69,15 @@ function(file_list, predictor=NULL) {
   model_metadata<- list()
   model_metadata$xlabels<-list()
   predictor_vector<- NULL
+  read_files.x<- list()
+  read_files.y<- list()
   if (!is.null(predictor) && length(read_files)){
     predictor_vector<- read_files[[names(file_list)[1]]][,c("Sample",predictor)]
   }
   if(length(read_files)){
     for(i in 1:length(read_files)){
-      read_files[[names(read_files)[i]]]<-read_files[[names(read_files)[i]]][,!names(read_files[[names(read_files)[i]]]) %in% c(predictor)]
+      read_files.x[[i]]<-read_files[[names(read_files)[i]]][,!names(read_files[[names(read_files)[i]]]) %in% c(predictor)]
+      read_files.y[[i]]<-read_files[[names(read_files)[i]]][,names(read_files[[names(read_files)[i]]]) %in% c(predictor)]
       model_metadata$xlabels[[i]]<-names(read_files[[names(read_files)[i]]])
     }
   }
@@ -87,9 +90,15 @@ function(file_list, predictor=NULL) {
   print(predictor_vector)
   cat("\n File X Labels\n")
   print(model_metadata$xlabels)
-  cat("End file X labels\n")
+  cat("---------\n")
+  cat("\n Read Files X Values\n")
+  print(read_files.x)
+  cat("---------\n")
+  cat("\n Read Files Y Values\n")
+  print(read_files.y)
+  cat("---------\n")
   cat("\n")
-  concatenated_files<-utilities$drop_NAs_join(read_files, predictor_vector)
+  read_files.x.y.concat<-utilities$drop_NAs_join(read_files.x, predictor_vector)
 }
 
 #* @get /predict/dimensions

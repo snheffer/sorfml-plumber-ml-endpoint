@@ -8,6 +8,6 @@ drop_NAs_join <- function (read_files, predictor_vector=NULL){
   if(!is.null(predictor_vector)){
     merged_data <- left_join(merged_data, predictor_vector, by=colnames(merged_data)[[1]])
   }
-  print(merged_data)
+  # print(merged_data)
   return(merged_data)
 }
