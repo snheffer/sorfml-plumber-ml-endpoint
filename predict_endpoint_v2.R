@@ -1,7 +1,7 @@
 library(plumber)
 library(R6)
-library(parallel)
 library(future)
+library(dplyr)
 # library(pls)
 # library(caret)
 utilities <- new.env()
@@ -14,26 +14,25 @@ download_and_load_model <- function(url) {
   loaded_model <- readRDS(temp_file)
   return(loaded_model)
 }
+# 
+# ##Detach non-core packages:
+# detachAllPackages <- function() {
+#   
+#   basic.packages <- c("package:stats","package:graphics","package:grDevices","package:utils","package:datasets","package:methods","package:base")
+#   
+#   package.list <- search()[ifelse(unlist(gregexpr("package:",search()))==1,TRUE,FALSE)]
+#   
+#   package.list <- setdiff(package.list,basic.packages)
+#   
+#   if (length(package.list)>0)  for (package in package.list) detach(package, character.only=TRUE)
+#   
+# }
 
+# detachAllPackages()
 
-# Create a mock model with metadata
-# mock_model <- list(
-#   metadata = list(
-#     dimensions = c("feature1", "feature2", "feature3")
-#   ),
-#   trained_model = "YourTrainedModelObject"
-# )
 
 Saved_Model<-readRDS("/home/user/Documents/projects/r.reproduce.foodspoilage.pls/chicken_reapplication_prediction_API_R6.RDS")
 saved_model<- Saved_Model$new("/home/user/Documents/projects/r.reproduce.foodspoilage.pls/chicken_beef_decision_fusion/chicken_reapplication_models.RDS")
-# Save the mock model as an RDS file
-# saveRDS(mock_model, "mock_model.rds")
-
-library(plumber)
-
-# Load the serialized model
-loaded_model <- readRDS("mock_model.rds")
-
 
 # Define the plumber API
 #* @apiTitle BoilerPlate ML Prediction API
@@ -62,13 +61,12 @@ function(file_list, predictor=NULL) {
 #* @post /predict
 #* @param file_list:[file]
 #* @param predictor:name
-#* @serializer json
+#* @serializer csv
 function(file_list, predictor=NULL) {
-  future({
+  future::future({
     read_files<- list()
     transformed_files<- list()
     for (i in 1:length(file_list)){
-      # cat(file_list[[i]])
       read_files[[names(file_list)[i]]]<- read.table(text = file_list[[i]], sep =",", header = TRUE, stringsAsFactors = FALSE)
       colnames(read_files[[names(file_list)[i]]])[1]<-"Sample"
       cat("COLNAMES:\n")
