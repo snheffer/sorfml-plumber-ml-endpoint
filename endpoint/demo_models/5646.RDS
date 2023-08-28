@@ -1,0 +1,195 @@
+#### Example file showing possible model structure:
+##Detach non-core packages:
+detachAllPackages <- function() {
+
+  basic.packages <- c("package:stats","package:graphics","package:grDevices","package:utils","package:datasets","package:methods","package:base")
+
+  package.list <- search()[ifelse(unlist(gregexpr("package:",search()))==1,TRUE,FALSE)]
+
+  package.list <- setdiff(package.list,basic.packages)
+
+  if (length(package.list)>0)  for (package in package.list) detach(package, character.only=TRUE)
+
+}
+#### INIT
+library(waves)
+library(knitr)
+library(ggplot2)
+library(ggpubr)
+library(reshape2)
+library(stringr)
+library(dplyr)
+# library(pls)
+# library(caret)
+library(splitstackshape)
+library(gridExtra)
+library(pls)
+
+# Load the required library in the custom namespace
+model_class <- R6::R6Class(
+  "model_class", 
+  public = list(
+    initialize = function(model_location){
+    },
+    class_ns = list(predict.mvr=pls:::predict.mvr),
+    models = (readRDS("/home/user/Documents/projects/r.reproduce.foodspoilage.pls/chicken_beef_decision_fusion/chicken_reapplication_models.RDS")),
+    test_value = "foo",
+    test = function(){
+      cat("THE TEST VALUE IS: ")
+      cat(self$test_value); cat("\n")
+    },
+    data_dimensions = list(
+      dim(msi_trimmed[[1]]),
+      dim(ftir_trimmed[[2]])
+    ),
+    data_colnames = list(
+      colnames(msi_trimmed[[1]]),
+      colnames(ftir_trimmed[[1]])
+    ),
+    utils = list(
+      SNV = function(spectra){                                             
+        spectra<-as.matrix(spectra)
+        spectrat<-t(spectra)
+        spectrat_snv<-scale(spectrat,center=TRUE,scale=TRUE)
+        spectra_snv<-t(spectrat_snv)
+        return(spectra_snv)
+      }
+    ),
+    
+    
+    execute = function(file_list, predictor = NULL){
+      read_files<- list()
+      transformed_files<- list()
+      for (i in 1:length(file_list)){
+        read_files[[names(file_list)[i]]]<- read.table(text = file_list[[i]], sep =",", header = TRUE, stringsAsFactors = FALSE)
+        colnames(read_files[[names(file_list)[i]]])[1]<-"Sample"
+        # print("COLNAMES")
+        # print(colnames(read_files[[names(file_list)[i]]]))
+        ###transform raw files to transformed state.
+        transformed_files[[i]]<-private$pre_proc[[i]](self,read_files[[i]])
+      }
+      model_metadata<- list()
+      model_metadata$xlabels<-list()
+      predictor_vector<- NULL
+      read_files.x<- list()
+      read_files.y<- list()
+      if (!is.null(predictor) && length(read_files)){
+        predictor_vector<- read_files[[names(file_list)[1]]][,c("Sample",predictor)]
+      }
+      if(length(read_files)){
+        for(i in 1:length(read_files)){
+          read_files.x[[i]]<-read_files[[names(read_files)[i]]][,!names(read_files[[names(read_files)[i]]]) %in% c(predictor)]
+          read_files.y[[i]]<-read_files[[names(read_files)[i]]][,names(read_files[[names(read_files)[i]]]) %in% c(predictor)]
+          model_metadata$xlabels[[i]]<-names(read_files[[names(read_files)[i]]])
+        }
+      }
+      
+      # print("DFs:")
+      # for(file in read_files){
+      #   print(file)
+      # }
+      # print("Predictor_Vector:")
+      # print(predictor_vector)
+      # print("File X Labels")
+      # print(model_metadata$xlabels)
+      # print("---------")
+      # print("Read Files X Values:")
+      # print(read_files.x)
+      # print("---------")
+      # print("Read Files Y Values")
+      # print(read_files.y)
+      # print("---------")
+      print("\n")
+      return(as.data.frame(private$main_proc(transformed_files)))
+    }
+  ),
+  
+  private = list(
+    
+    pre_proc = list(
+      function(self, new_data){
+        sample_name<-new_data[1]
+        new_data<-new_data[,-1]
+        # print(new_data)
+        
+        ###Restrict Data to training colnames:
+        new_data <- new_data[, (colnames(new_data) %in% self$data_colnames[[1]]), drop = FALSE]
+        cat("Dim original data:\n")
+        print(self$data_dimensions[[1]]); cat("\n")
+        cat("Dim new data:\n")
+        print(dim(new_data))
+        
+        ###Do SNV:
+        new_data<-self$utils$SNV(new_data)
+        
+        cat("Primary Model Type 1: \n")
+        cat(class(self$models$primary_models[[1]]))
+        cat("\n")
+        
+        
+        ###Do Decision Extraction:
+        new_data<-self$class_ns$predict.mvr(self$models$primary_models[[1]], newdata = new_data)
+        
+        ###Rejoin Sample Name and Data.
+        new_data<- data.frame(Sample=sample_name, new_data)
+        
+        return(new_data)
+        
+      },
+      function(self, new_data){
+        
+        sample_name<-new_data[1]
+        new_data<-new_data[,-1]
+        # print(new_data)
+        
+        ###Restrict Data to training colnames:
+        new_data <- new_data[, (colnames(new_data) %in% self$data_colnames[[2]]), drop = FALSE]
+        cat("Dim original data:\n")
+        print(self$data_dimensions[[2]]); cat("\n")
+        cat("Dim new data:\n")
+        print(dim(new_data))
+        
+        ###Do Savinsky-Golay Filtering
+        new_data<- waves::pretreat_spectra(df=new_data, pretreatment = 11,)
+        
+        ###Restrict Data to Specific Wavelengths
+        new_data.selected_cols<- grep("^X(9|1[0-9]{3})", colnames(new_data), value = TRUE)
+        new_data<- new_data[,new_data.selected_cols]
+        
+        cat("Primary Model Type 2: \n")
+        cat(class(self$models$primary_models[[2]]))
+        cat("\n")
+        
+        ###Do Decision Extraction:
+        new_data<-self$class_ns$predict.mvr(self$models$primary_models[[2]], newdata = new_data)
+        
+        ###Rejoin Sample Name and Data.
+        new_data<- data.frame(Sample=sample_name, new_data)
+        return(new_data)
+      }
+    ),
+    main_proc = function(new_data_list){
+      print(typeof(new_data_list[[1]]))
+      #Join data tables by sample name
+      print("MAP DATASET LIST")
+      new_data_list <- lapply(new_data_list, function(dt) data.frame(dt))
+      print("MERGE DATASETS ON SAMPLE NAME.")
+      merged_data <- new_data_list %>%
+        Reduce(function(x, y) dplyr::left_join(x,y, colnames(x)[[1]]), .)
+      print("Merged Data ColNames:")
+      print(colnames(merged_data))
+      merged_data<- data.frame(merged_data, row.names = 1)
+      print("Merged Data ColNames:")
+      print(colnames(merged_data))
+      cat("Secondary Model Type 1: \n")
+      cat(class(self$models$secondary_model[[1]]))
+      cat("\n")      
+      new_data<-self$class_ns$predict.mvr(self$models$secondary_models[[1]], newdata = merged_data)
+    }
+  )
+)
+
+#### Save the Demo Model Object RDS.
+
+saveRDS(model_class, "./chicken_reapplication_prediction_API_R6-v5.RDS")
+

@@ -1,0 +1,127 @@
+library(plumber)
+library(R6)
+library(future)
+library(dplyr)
+library("aws.s3")
+# library(caret)
+utilities <- new.env()
+sys.source("./utilities/utilities_v2.R", envir = utilities, toplevel.env = utilities)
+
+###Print S3 Bucket List.
+print(aws.s3::bucketlist(use_https=F))
+
+print(env_var)
+
+# Load the serialized model from S3
+download_and_load_model <- function(url) {
+  temp_file <- tempfile(fileext = ".rds")
+  download.file(url, temp_file)
+  loaded_model <- readRDS(temp_file)
+  return(loaded_model)
+}
+
+# Find Model In Local Persistent Volume, Otherwise download from S3. No permission
+# needed here, as this is handled by upstream API (sorfml-spring-api).
+
+find_or_download_model <- function(file_id, local_dir, s3_bucket = NULL, s3_endpoint = NULL, s3_access_key, s3_secret_key) {
+
+  
+  # Check if the file exists in the local directory
+  local_path <- file.path(local_dir, file_id)
+  if (file.exists(local_path)) {
+    print("Local Path: ")
+    print(local_path)
+    return(readRDS(file=local_path))
+  }
+  
+  # If S3 bucket and endpoint are provided, attempt to download from S3
+  if (!is.null(s3_bucket) && !is.null(s3_endpoint)) {
+    tryCatch({
+      if(aws.s3::object_exists(file_id, s3_bucket, use_https=F)){
+        aws.s3::save_object(object = file_id, bucket = s3_bucket, file = local_path, use_https=F)
+      }
+      return(readRDS(file=local_path))
+    }, error = function(e) {
+      message("Error downloading from S3:", e$message)
+    })
+  }
+  
+  stop("RDS file not found in local directory or on S3.")
+}
+
+# 
+# ##Detach non-core packages:
+detachAllPackages <- function() {
+
+  basic.packages <- c("package:stats","package:graphics","package:grDevices","package:utils","package:datasets","package:methods","package:base")
+
+  package.list <- search()[ifelse(unlist(gregexpr("package:",search()))==1,TRUE,FALSE)]
+
+  package.list <- setdiff(package.list,basic.packages)
+
+  if (length(package.list)>0)  for (package in package.list) detach(package, character.only=TRUE)
+
+}
+  
+# detachAllPackages()
+
+
+Saved_Model<-readRDS("/home/user/Documents/projects/r.reproduce.foodspoilage.pls/chicken_reapplication_prediction_API_R6-v5.RDS")
+saved_model<- Saved_Model$new()
+
+saveRDS(file="./nestedRDStest.RDS", saved_model)
+
+# Define the plumber API
+#* @apiTitle BoilerPlate ML Prediction API
+#* @apiDescription An API for serving a serialized model
+#* @apiParam url The URL of the serialized model
+
+#* @param file_list:[file]
+#* @param predictor:name
+
+#* @post /train
+function(file_list, predictor=NULL) {
+  # read_file<-  read.table(text = file_list[[1]], sep =",", header = TRUE, stringsAsFactors = FALSE)
+  # loaded_model <- readRDS(url)
+  read_files<- list()
+  for (i in 1:length(file_list)){
+    read_files[[names(file_list)[i]]]<- read.table(text = file_list[[i]], sep =",", header = TRUE, stringsAsFactors = FALSE)
+    if (!is.null(predictor)){
+      read_files[[names(file_list)[i]]]<-read_files[[names(file_list)[i]]][,!names(read_files[[names(file_list)[i]]]) %in% 
+                                                                             c(predictor)]
+    }  
+  }
+  prediction <- "SamplePredictionResult"
+  
+  return(list(prediction = prediction, read_files = read_files, body = body))
+}
+
+#* @post /predict
+#* @param file_list:[file]
+#* @param predictor:name
+#* @serializer csv
+function(file_list, predictor=NULL) {
+  future::future({
+    saved_model$execute(file_list, predictor)
+  })
+  # read_files.x.y.concat<-utilities$drop_NAs_join(read_files.x, predictor_vector)
+}
+
+# Define the Plumber API using annotations
+#* @get /predict/<file_id>
+#* @param file_id:string ID or name of the RDS file
+#* @serializer html
+get_rds_endpoint <- function(file_id) {
+  future::future({
+    data <- find_or_download_model(file_id, env_var$model_local_dir, env_var$model_s3_bucket, env_var$model_s3_endpoint, env_var$s3_accesskey, env_var$s3_secretkey)
+    as.character(data$new("abc")$models)
+  })
+}
+
+#* @get /predict/dimensions
+function(req, res) {
+  dimensions <- loaded_model$metadata$dimensions
+  
+  return(list(dimensions = dimensions))
+}
+
