@@ -12,6 +12,14 @@ print(aws.s3::bucketlist(use_https=F))
 
 print(env_var)
 
+api_error <- function(message, status) {
+  err <- structure(
+    list(message = message, status = status),
+    class = c("api_error", "error", "condition")
+  )
+  signalCondition(err)
+}
+
 # Load the serialized model from S3
 download_and_load_model <- function(url) {
   temp_file <- tempfile(fileext = ".rds")
@@ -42,11 +50,11 @@ find_or_download_model <- function(file_id, local_dir, s3_bucket = NULL, s3_endp
       }
       return(readRDS(file=local_path))
     }, error = function(e) {
-      message("Error downloading from S3:", e$message)
+      api_error(message = "File Not Found Locally or on S3", 404)
     })
   }
   
-  stop("RDS file not found in local directory or on S3.")
+  api_error(message = "RDS file not found in local directory or on S3.", 404)
 }
 
 # 
@@ -108,20 +116,41 @@ function(file_list, predictor=NULL) {
 }
 
 # Define the Plumber API using annotations
-#* @get /predict/<file_id>
+#* @post /predict/<file_id>
+#* @param file_list:[file]
 #* @param file_id:string ID or name of the RDS file
-#* @serializer html
-get_rds_endpoint <- function(file_id) {
+#* @serializer unboxedJSON
+#* @response 403 Forbidden
+#* @response 404 Not Found
+#* @response 400
+function(res, req, file_list=NA, file_id) {
   future::future({
-    data <- find_or_download_model(file_id, env_var$model_local_dir, env_var$model_s3_bucket, env_var$model_s3_endpoint, env_var$s3_accesskey, env_var$s3_secretkey)
-    as.character(data$new("abc")$models)
+    if(is.na(file_list)){
+      return(api_error(message = "No Files Supplied.", 400))
+    }
+    loaded_model <- list()
+    predictor <- NULL
+    loaded_model <- find_or_download_model(file_id, env_var$model_local_dir, env_var$model_s3_bucket, env_var$model_s3_endpoint, env_var$s3_accesskey, env_var$s3_secretkey)
+    result <- loaded_model$new()$execute(file_list)
+    print(result)
+    (c(result))
   })
 }
 
-#* @get /predict/dimensions
-function(req, res) {
-  dimensions <- loaded_model$metadata$dimensions
-  
-  return(list(dimensions = dimensions))
+#* @get /predict/<file_id>/dimensions
+#* @param file_id:string ID or name of the RDS file
+#* @serializer json
+#* @response 403 Forbidden
+#* @response 404 Not Found
+function(req, res, file_id) {
+  future::future({
+    loaded_model <- list()
+    loaded_model <- find_or_download_model(file_id, env_var$model_local_dir, 
+                                           env_var$model_s3_bucket, env_var$model_s3_endpoint, 
+                                           env_var$s3_accesskey, env_var$s3_secretkey)
+    
+    dimensions <- loaded_model$new()$data_dimensions
+    return((dimensions))
+  })
 }
 

@@ -56,12 +56,65 @@ if("LOG_DIR" %in% names(Sys.getenv())){
   logger::log_appender(logger::appender_stdout)
 }
   
+#* @response 403 Not Authorized
+#* @response 404 Not Found
+# Custom Error Handler:
+error_handler <- function(req, res, err) {
+  if (!inherits(err, "api_error")) {
+    res$status <- 500
+    res$body <- "{\"status\":500,\"message\":\"Internal server error.\"}"
+    
+    # Print the internal error so we can see it from the server side. A more
+    # robust implementation would use proper logging.
+    print("INTERNAL ERROR:")
+    print(err)
+  } else {
+    print("CUSTOM ERROR:")
+    print(err)
+    # We know that the message is intended to be user-facing.
+    res$status <- err$status
+    res$serializer <- serializer_unboxed_json()
+    res$setHeader("Content-Type", "application/json")
+    res$body <- sprintf(
+      "{\"status\":%d,\"message\":\"%s\"}", err$status, err$message
+    )
+  }
+  res
+}
 
+serializer_switch <- function() {
+  function(val, req, res, errorHandler) {
+    tryCatch({
+      format <- attr(val, "serialize_format")
+      print("Format:")
+      print(format)
+      if (is.null(format) || format  == "json" || format == "character") {
+        type <- "application/json"
+        sfn <- jsonlite::toJSON
+      } else if (format == "csv") {
+        type <- "text/csv; charset=UTF-8"
+        sfn <- readr::format_csv
+      } else if (format == "rds") {
+        type <- "application/rds"
+        sfn <- function(x) base::serialize(x, NULL)
+      }
+      val <- sfn(val)
+      res$setHeader("Content-Type", type)
+      res$body <- val
+      res$toResponse()
+    }, error = function(err) {
+      errorHandler(req, res, err)
+    })
+  }
+}
+
+plumber::register_serializer("switch", serializer_switch)
 
 tryCatch(
   #try to do this
   {
     pr <- plumber::plumb("./predict_endpoint_v5.R")
+    pr$setErrorHandler(error_handler)
     pr$registerHooks(
       list(
         preroute = function() {
@@ -76,6 +129,12 @@ tryCatch(
         }
       )
     )
+    pr$handle("GET", "/plumber/healthcheck", function(req, res) {
+      res$setHeader("Content-Type", "application/json")
+      res$status <- 200L
+      res$body <- ""
+      res
+    })
     plumber::pr_run(pr, host = "0.0.0.0", port = as.numeric(env_var$port))
   },
   #if an error occurs, log it and quit:
