@@ -122,7 +122,7 @@ function(file_list, predictor=NULL) {
 #* @serializer unboxedJSON
 #* @response 403 Forbidden
 #* @response 404 Not Found
-#* @response 400
+#* @response 400 Bad Request
 function(res, req, file_list=NA, file_id) {
   future::future({
     if(is.na(file_list)){
