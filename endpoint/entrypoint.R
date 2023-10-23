@@ -113,7 +113,7 @@ plumber::register_serializer("switch", serializer_switch)
 tryCatch(
   #try to do this
   {
-    pr <- plumber::plumb("./predict_endpoint_v5.R")
+    pr <- plumber::plumb("./plumber_endpoint.R")
     pr$setErrorHandler(error_handler)
     pr$registerHooks(
       list(
@@ -135,6 +135,11 @@ tryCatch(
       res$body <- ""
       res
     })
+    ###Add specific examples to certain routes:
+    # pr$setApiSpec(function(spec) {
+    #   spec$paths$`//predict/<file_id>/dimensions`$get$responseBody$content$`application/json`$schema$properties$example <- list(a = 2, b = 3, c = 4)
+    #   spec
+    # })
     plumber::pr_run(pr, host = "0.0.0.0", port = as.numeric(env_var$port))
   },
   #if an error occurs, log it and quit:
